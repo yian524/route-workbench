@@ -105,7 +105,7 @@ class RoutingMessages(unittest.TestCase):
         with patch.object(routing, 'urlopen', side_effect=err):
             with self.assertRaises(routing.RoutingFailure) as ctx:
                 routing.fetch_route([{'lat': 48.86, 'lng': 2.30}, {'lat': 48.87, 'lng': 2.31}])
-        self.assertEqual(ctx.exception.status, 422); self.assertIn('100 公尺內沒有機車能走的道路', str(ctx.exception))
+        self.assertEqual(ctx.exception.status, 422); self.assertIn('100 公尺內沒有機車能通行的道路', str(ctx.exception))
 
     def test_distance_over_250km_is_422_not_400(self):
         router = routing.ScooterRouter(fetcher=lambda *a: self.fail('must not call upstream'))

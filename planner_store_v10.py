@@ -98,7 +98,7 @@ def validate_library(value):
         if 'roadRoute' in route:
             road=route['roadRoute']
             allowed_road={'provider','costing','pointKey','distanceMeters','durationSeconds','computedAt','steps','timeNote','segmentSources'}
-            osm=isinstance(road,dict) and road.get('provider')=='valhalla_fossgis' and road.get('costing') in {'motor_scooter','motorcycle'}
+            osm=isinstance(road,dict) and road.get('provider')=='valhalla_fossgis' and road.get('costing') in {'motor_scooter','motorcycle','auto','bicycle','pedestrian'}
             hybrid=isinstance(road,dict) and road.get('provider') in {'hybrid_osm_google_v21','hybrid_osm_path_v22'} and road.get('costing')=='motorcycle_mixed'
             if not isinstance(road,dict) or set(road)-allowed_road or not (osm or hybrid) or 'editShape' not in route:
                 raise ValueError('invalid road route')

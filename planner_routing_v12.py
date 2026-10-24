@@ -10,6 +10,30 @@ import json
 
 UPSTREAM = 'https://valhalla1.openstreetmap.de/route'
 MAX_RESPONSE = 2_000_000
+# Travel modes offered by the planner. 'travel' is Valhalla's (travel_mode, travel_type) for every
+# maneuver; None accepts any type of that mode (bicycle types vary: road, hybrid, cross, mountain).
+# Two-wheelers keep the original rules: no motorways, two-stage turn reminders.
+MODES = {
+    'motorcycle': {'label': '機車', 'travel': ('drive', 'motorcycle'), 'two_wheeler': True,
+                   'warning': 'OpenStreetMap 機車模型；現場車道、禁轉與兩段式待轉仍需核對。',
+                   'time': '道路模型時間；未取得臺北早尖峰即時車流與完整號誌／兩段式停等秒數。'},
+    'motor_scooter': {'label': '機車', 'travel': ('drive', 'motor_scooter'), 'two_wheeler': True,
+                      'warning': 'OpenStreetMap 機車模型；現場車道、禁轉與兩段式待轉仍需核對。',
+                      'time': '道路模型時間；未取得臺北早尖峰即時車流與完整號誌／兩段式停等秒數。'},
+    'auto': {'label': '汽車', 'travel': ('drive', 'car'), 'two_wheeler': False,
+             'warning': 'OpenStreetMap 汽車模型；現場車道、禁轉與單行道仍需核對。',
+             'time': '道路模型時間；未含即時車流、紅燈與找停車位時間。'},
+    'bicycle': {'label': '自行車', 'travel': ('bicycle', None), 'two_wheeler': False,
+                'warning': 'OpenStreetMap 自行車模型；自行車道、禁行路段與路況仍需核對。',
+                'time': '自行車模型時間；未含紅燈、坡度與個人騎乘速度差異。'},
+    'pedestrian': {'label': '步行', 'travel': ('pedestrian', 'foot'), 'two_wheeler': False,
+                   'warning': 'OpenStreetMap 步行模型；人行道、天橋與地下道請依現場標示。',
+                   'time': '步行模型時間（約時速 5 公里）；未含等紅燈與上下樓梯時間。'},
+}
+
+
+def mode_info(costing):
+    return MODES.get(costing, MODES['motorcycle'])
 
 class RoutingFailure(Exception):
     def __init__(self, message, status=502):
@@ -52,7 +76,7 @@ def decode_shape(value):
     if not 2<=len(nodes)<=1000:raise ValueError('invalid shape size')
     return nodes
 
-def maneuver_text(kind,road):
+def maneuver_text(kind,road,costing='motor_scooter'):
     names={0:('unknown','續行'),1:('start','出發'),2:('start','出發'),3:('start','出發'),
         4:('arrival','到達終點'),5:('arrival','到達終點右側'),6:('arrival','到達終點左側'),
         7:('straight','繼續直行'),8:('straight','繼續直行'),9:('right','向右靠'),10:('right','右轉'),11:('right','向右急轉'),
@@ -63,7 +87,7 @@ def maneuver_text(kind,road):
         29:('straight','離開渡輪'),37:('merge','向右匯入'),38:('merge','向左匯入')}
     turn,title=names.get(kind,('unknown','依道路續行'))
     text=title+('，進入「'+road+'」' if road and turn not in {'arrival'} else '')
-    if turn in {'left','uturn'}:text+='；兩段式待轉及禁止轉彎標誌待現場核對'
+    if turn in {'left','uturn'} and mode_info(costing)['two_wheeler']:text+='；兩段式待轉及禁止轉彎標誌待現場核對'
     return turn,text
 
 def validate_snaps(result,inputs,max_snap_meters):
@@ -75,13 +99,13 @@ def validate_snaps(result,inputs,max_snap_meters):
         if isinstance(distance,bool) or not isinstance(distance,(int,float)) or not isfinite(distance) or distance<0:
             raise RoutingFailure('道路選點距離資料不完整，原方案保留。',422)
         if distance>max_snap_meters or meters(original,coordinate(adopted))>max_snap_meters:
-            raise RoutingFailure(f'選點距可接上的機車道路超過 {max_snap_meters} 公尺，請把點移到道路上。',422)
+            raise RoutingFailure(f'選點距可接上的道路超過 {max_snap_meters} 公尺，請把點移到道路上。',422)
 
 def normalize(data,inputs,costing='motor_scooter',max_snap_meters=100):
     trip=data.get('trip',{})
-    if trip.get('status')!=0 or len(trip.get('legs',[]))!=1:raise RoutingFailure('找不到完整的機車道路路徑。',422)
+    if trip.get('status')!=0 or len(trip.get('legs',[]))!=1:raise RoutingFailure(f"找不到完整的{mode_info(costing)['label']}路徑。",422)
     leg=trip['legs'][0]
-    if trip.get('summary',{}).get('has_highway') is True:
+    if mode_info(costing)['two_wheeler'] and trip.get('summary',{}).get('has_highway') is True:
         raise RoutingFailure('模型包含高速道路，這次結果不採用；請把途經點移到一般機車道路。',422)
     try:
         original=decode_shape(leg.get('shape'))
@@ -96,7 +120,7 @@ def normalize(data,inputs,costing='motor_scooter',max_snap_meters=100):
                 pos=0 if control_index==0 else len(original)-1
                 q=original[pos];d=meters(p,q)
                 if d>max_snap_meters:
-                    raise RoutingFailure(f'起點或終點距可接上的機車道路超過 {max_snap_meters} 公尺，請把點移到道路上。',422)
+                    raise RoutingFailure(f'起點或終點距可接上的道路超過 {max_snap_meters} 公尺，請把點移到道路上。',422)
                 positions.append((d,float(pos),q));lower=float(pos)
                 continue
             best=None
@@ -109,7 +133,7 @@ def normalize(data,inputs,costing='motor_scooter',max_snap_meters=100):
                 q={'lat':a['lat']+(b['lat']-a['lat'])*t,'lng':a['lng']+(b['lng']-a['lng'])*t}
                 d=meters(p,q)
                 if best is None or d<best[0]:best=(d,pos,q)
-            if best is None or best[0]>max_snap_meters:raise RoutingFailure(f'選點距可接上的機車道路超過 {max_snap_meters} 公尺，請把點移到道路上。',422)
+            if best is None or best[0]>max_snap_meters:raise RoutingFailure(f'選點距可接上的道路超過 {max_snap_meters} 公尺，請把點移到道路上。',422)
             positions.append(best);lower=best[1]
         merged=[(float(i),p,'node',i) for i,p in enumerate(original)]
         merged.extend((pos,q,'anchor',i) for i,(_,pos,q) in enumerate(positions))
@@ -123,20 +147,21 @@ def normalize(data,inputs,costing='motor_scooter',max_snap_meters=100):
         steps=[]
         for item in leg.get('maneuvers',[]):
             if len(steps)>=200:raise ValueError('too many turns')
-            if item.get('travel_type')!=costing:raise ValueError('unexpected travel profile')
+            travel_mode,travel_type=mode_info(costing)['travel']
+            if item.get('travel_mode',travel_mode)!=travel_mode or travel_type and item.get('travel_type')!=travel_type:raise ValueError('unexpected travel profile')
             old=item['begin_shape_index'];at=original_indices[old]
             road='、'.join(str(n) for n in item.get('street_names',[]))[:160]
-            turn,text=maneuver_text(item['type'],road)
+            turn,text=maneuver_text(item['type'],road,costing)
             steps.append({'road':road or '未命名道路','turnKind':turn,'instruction':text[:160],
                 'shapeIndex':at,'start':nodes[at],'distanceMeters':round(float(item.get('length',0))*1000,1),
                 'durationSeconds':float(item.get('time',0)),'confirmed':False,
-                'warning':'OpenStreetMap 機車模型；現場車道、禁轉與兩段式待轉仍需核對。'})
+                'warning':mode_info(costing)['warning']})
         summary=trip['summary'];length=float(summary['length'])*1000;duration=float(summary['time'])
         if not all(isfinite(n) and 0<=n<=1000000 for n in [length,duration]):raise ValueError('invalid summary')
         result={'path':nodes,'points':controls,'steps':steps,'distanceMeters':round(length,1),'durationSeconds':duration,
             'provider':'valhalla_fossgis','costing':costing,'computedAt':datetime.now(timezone.utc).isoformat(),
             'snapDistancesMeters':[round(d,1) for d,_,_ in positions],
-            'timeNote':'道路模型時間；未取得臺北早尖峰即時車流與完整號誌／兩段式停等秒數。'}
+            'timeNote':mode_info(costing)['time']}
         validate_snaps(result,inputs,max_snap_meters)
         return result
     except (ValueError,KeyError,TypeError,IndexError,OverflowError) as error:
@@ -146,7 +171,7 @@ def normalize(data,inputs,costing='motor_scooter',max_snap_meters=100):
 
 def fetch_route(points,costing='motor_scooter'):
     payload={'locations':[{'lat':p['lat'],'lon':p['lng'],'type':'via' if 0<i<len(points)-1 else 'break','search_cutoff':100,'rank_candidates':False} for i,p in enumerate(points)],
-        'costing':costing,'costing_options':{costing:{'top_speed':45,'use_highways':0,'use_tolls':0,'use_tracks':0,'use_trails':0,'exclude_highways':True}},
+        'costing':costing,'costing_options':{costing:{'top_speed':45,'use_highways':0,'use_tolls':0,'use_tracks':0,'use_trails':0,'exclude_highways':True}} if mode_info(costing)['two_wheeler'] else {},
         'units':'kilometers','language':'en-US'}
     request=Request(UPSTREAM,data=json.dumps(payload,allow_nan=False).encode(),headers={
         'Content-Type':'application/json','User-Agent':'RouteWorkbench/25 (self-hosted route planner)',
@@ -160,9 +185,9 @@ def fetch_route(points,costing='motor_scooter'):
         try:engine_error=json.loads(error.read(5000)).get('error_code')
         except (ValueError,OSError):engine_error=None
         if engine_error==150:raise RoutingFailure('路線服務單次最多 10 個位置；請分段計算。',422) from error
-        if engine_error==171:raise RoutingFailure('選的點附近 100 公尺內沒有機車能走的道路（例如徒步區、公園或建物內），請把點移到車道上。',422) from error
+        if engine_error==171:raise RoutingFailure(f"選的點附近 100 公尺內沒有{mode_info(costing)['label']}能通行的道路（例如徒步區、公園或建物內），請把點移到可通行的路上。",422) from error
         if engine_error in (154,155):raise RoutingFailure('路線距離超過免費路線服務的單次上限，請加途經點分段規劃。',422) from error
-        raise RoutingFailure('免費路線服務暫時限流，請稍後再試。' if error.code==429 else '路線服務找不到可通行的完整機車路徑。',429 if error.code==429 else 422) from error
+        raise RoutingFailure('免費路線服務暫時限流，請稍後再試。' if error.code==429 else f"路線服務找不到可通行的完整{mode_info(costing)['label']}路徑。",429 if error.code==429 else 422) from error
     except (URLError,TimeoutError,OSError,ValueError) as error:
         raise RoutingFailure('免費路線服務暫時無法連線，原路線保留。',503) from error
 
@@ -172,7 +197,7 @@ class ScooterRouter:
     def route(self,payload):
         if not isinstance(payload,dict) or not {'points'}<=set(payload)<= {'points','profile','maxSnapMeters'}:raise ValueError('invalid routing request')
         costing=payload.get('profile','motor_scooter')
-        if costing not in {'motor_scooter','motorcycle'}:raise ValueError('invalid routing profile')
+        if costing not in MODES:raise ValueError('invalid routing profile')
         max_snap_meters=payload.get('maxSnapMeters',100)
         if type(max_snap_meters) is not int or max_snap_meters not in {30,100}:raise ValueError('invalid maximum snap distance')
         values=payload['points']
