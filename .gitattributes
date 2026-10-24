@@ -1,0 +1,5 @@
+# Same bytes on every platform, so MANIFEST.json hashes match any checkout.
+* text=auto eol=lf
+*.jpg binary
+*.png binary
+*.ico binary

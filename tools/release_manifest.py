@@ -64,9 +64,10 @@ def main():
             sys.exit(1)
         print(f"OK: {len(stored['files'])} files match MANIFEST.json; asset versions current")
         return
-    (ROOT / 'index.html').write_text(refreshed_index(), 'utf-8')
+    (ROOT / 'index.html').write_bytes(refreshed_index().replace('\r\n', '\n').encode('utf-8'))
     data = manifest()
-    (ROOT / 'MANIFEST.json').write_text(json.dumps(data, ensure_ascii=False, indent=2) + '\n', 'utf-8')
+    # Always LF: the repo stores text as LF (.gitattributes), so hashes must be taken on LF bytes.
+    (ROOT / 'MANIFEST.json').write_bytes((json.dumps(data, ensure_ascii=False, indent=2) + '\n').encode('utf-8'))
     print(f"Wrote MANIFEST.json with {len(data['files'])} files")
 
 
