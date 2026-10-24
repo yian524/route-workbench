@@ -140,6 +140,8 @@ def normalize(data,inputs,costing='motor_scooter',max_snap_meters=100):
         validate_snaps(result,inputs,max_snap_meters)
         return result
     except (ValueError,KeyError,TypeError,IndexError,OverflowError) as error:
+        if str(error) in ('route shape too long','too many shape nodes'):
+            raise RoutingFailure('路線太長（超過 1,000 個道路節點，約 50 公里以上）；請加途經點分段，或縮短路線。',422) from error
         raise RoutingFailure('路線服務回傳的資料不完整，原路線保留。') from error
 
 def fetch_route(points,costing='motor_scooter'):
@@ -158,6 +160,8 @@ def fetch_route(points,costing='motor_scooter'):
         try:engine_error=json.loads(error.read(5000)).get('error_code')
         except (ValueError,OSError):engine_error=None
         if engine_error==150:raise RoutingFailure('路線服務單次最多 10 個位置；請分段計算。',422) from error
+        if engine_error==171:raise RoutingFailure('選的點附近 100 公尺內沒有機車能走的道路（例如徒步區、公園或建物內），請把點移到車道上。',422) from error
+        if engine_error in (154,155):raise RoutingFailure('路線距離超過免費路線服務的單次上限，請加途經點分段規劃。',422) from error
         raise RoutingFailure('免費路線服務暫時限流，請稍後再試。' if error.code==429 else '路線服務找不到可通行的完整機車路徑。',429 if error.code==429 else 422) from error
     except (URLError,TimeoutError,OSError,ValueError) as error:
         raise RoutingFailure('免費路線服務暫時無法連線，原路線保留。',503) from error
@@ -174,7 +178,7 @@ class ScooterRouter:
         values=payload['points']
         if not isinstance(values,list) or not 2<=len(values)<=50:raise ValueError('routing requires 2 to 50 points')
         points=[coordinate(p) for p in values]
-        if sum(meters(a,b) for a,b in zip(points,points[1:]))>250000:raise ValueError('routing distance too long')
+        if sum(meters(a,b) for a,b in zip(points,points[1:]))>250000:raise RoutingFailure('起點、途經點到終點的直線距離合計超過 250 公里，免費路線服務無法一次計算；請分段規劃。',422)
         key=(costing,max_snap_meters,tuple((p['lat'],p['lng']) for p in points))
         with self.lock:
             now=monotonic();cached=self.cache.get(key)

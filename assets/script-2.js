@@ -600,7 +600,7 @@ return {plan,fingerprint,MAX_WAYPOINTS,MAX_URL_LENGTH};
 
   // One pending transaction; rendering never combines draft geometry with a road result.
   let clickEdit = null;
-  const SNAP_LIMIT = 30;
+  const SNAP_LIMIT = 100;
   function baselineRoad(r) {
     if (!r) return null;
     if (!r.custom) return data.computedPresets?.[r.id] || null;
@@ -694,7 +694,7 @@ return {plan,fingerprint,MAX_WAYPOINTS,MAX_URL_LENGTH};
       const gap=distance(points[i],r.points[i]);
       const upstream=r.snapDistancesMeters?.[i]??r.snapDistances?.[i]??0;
       if(gap>SNAP_LIMIT||!Number.isFinite(upstream)||upstream<0||upstream>SNAP_LIMIT)
-        throw new Error('第 '+(i+1)+' 個點離實際道路超過 30 公尺，請重新選在道路上。');
+        throw new Error('第 '+(i+1)+' 個點離實際道路超過 100 公尺，請重新選在道路上。');
     }
     if(distance(r.points[0],r.path[0])>1||distance(r.points.at(-1),r.path.at(-1))>1)
       throw new Error('道路起終點未接合，已保留原方案。');
