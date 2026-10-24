@@ -1,0 +1,9 @@
+# Personal word list for tools/check_privacy.py: never commit it
+.privacy-blocklist.txt
+# Python caches and local runtime output
+__pycache__/
+*.pyc
+logs/
+# Personal route data must never enter this public repository
+planner_saved_routes_v10.json*
+*.json.tmp

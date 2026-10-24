@@ -1,0 +1,1 @@
+document.getElementById('planner-data').textContent="{\"schemaVersion\":5,\"publicEdition\":true,\"productVersion\":25,\"uiVersion\":28,\"home\":{},\"office\":{},\"presets\":[],\"stations\":[],\"embeds\":[],\"computedPresets\":{},\"signalEvidence\":[],\"map\":{\"roads\":[]},\"handoffCandidates\":[],\"sources\":[],\"limitations\":[]}";
